@@ -35,6 +35,8 @@ def run(data_path, config):
     (
         train_set_norm,
         test_set_norm,
+        train_labels,       # added train_labels
+        test_labels,        # added test_labels
         normalization_features,
         original_shape,
     ) = helper.process(
@@ -114,6 +116,8 @@ def run(data_path, config):
         number_of_columns,
         train_set_norm,
         test_set_norm,
+        train_labels,
+        test_labels,
         # training_path,
         config,
     )
@@ -145,6 +149,7 @@ def fit(
     config,
     model,
     train_dl,
+    train_labels_dl,
     model_children,
     regular_param,
     optimizer,
@@ -176,6 +181,8 @@ def fit(
 
     for idx, inputs in enumerate(tqdm(train_dl)):
         inputs = inputs.to(device)
+        labels = train_labels_dl[idx]
+        labels = labels.to(device)
 
         # Set the gradients to zero
         optimizer.zero_grad()
@@ -190,12 +197,13 @@ def fit(
             z = model.encode(inputs)
             loss, mse_loss, l1_loss = utils.loss_function_swae(
                 inputs, z, reconstructions, latent_dim
-            )
+            )        
         else:
             # Compute how far off the prediction is
-            loss, mse_loss, l1_loss = utils.mse_sum_loss_l1(
+            loss, mse_loss, l1_loss, cluster_loss = utils.mse_sum_loss_l1(
                 model_children=model_children,
                 true_data=inputs,
+                true_labels=labels,
                 reconstructed_data=reconstructions,
                 reg_param=regular_param,
                 validate=True,
@@ -214,7 +222,7 @@ def fit(
     return epoch_loss, mse_loss, l1_loss, model
 
 
-def validate(model, test_dl, model_children, reg_param):
+def validate(model, test_dl, test_labels_dl, model_children, reg_param):
     """Function used to validate the training. Not necessary for doing compression, but gives a good indication of wether the model selected is a good fit or not.
     Args:
         model (modelObject): Defines the model one wants to validate. The model used here is passed directly from `fit()`.
@@ -234,11 +242,14 @@ def validate(model, test_dl, model_children, reg_param):
     with torch.no_grad():
         for idx, inputs in enumerate(tqdm(test_dl)):
             inputs = inputs.to(device)
+            labels = test_labels_dl[idx]
+            labels = labels.to(device)
             reconstructions = model(inputs)
 
             loss, _, _ = utils.mse_sum_loss_l1(
                 model_children=model_children,
                 true_data=inputs,
+                true_labels=labels,
                 reconstructed_data=reconstructions,
                 reg_param=reg_param,
                 validate=True,
@@ -260,7 +271,7 @@ def seed_worker(worker_id):
     random.seed(worker_seed)
 
 
-def train(model, variables, train_data, test_data, config):
+def train(model, variables, train_data, test_data, train_labels, test_labels, config):
     """Does the entire training loop by calling the `fit()` and `validate()`. Appart from this, this is the main function where the data is converted
         to the correct type for it to be trained, via `torch.Tensor()`. Furthermore, the batching is also done here, based on `config.batch_size`,
         and it is the `torch.utils.data.DataLoader` doing the splitting.
@@ -315,6 +326,12 @@ def train(model, variables, train_data, test_data, config):
             valid_ds = torch.tensor(test_data, dtype=torch.float32, device=device).view(
                 test_data.shape[0], test_data.shape[1] * test_data.shape[2]
             )
+            train_labels_ds = torch.tensor(
+                train_labels, dtype=torch.uint8, device=device
+            ).view(train_data.shape[0])
+            valid_labels_ds = torch.tensor(
+                test_labels, dtype=torch.uint8, device=device
+            ).view(test_data.shape[0])
         elif config.model_type == "convolutional" and config.model_name == "Conv_AE_3D":
             train_ds = torch.tensor(
                 train_data, dtype=torch.float32, device=device
@@ -362,6 +379,22 @@ def train(model, variables, train_data, test_data, config):
             generator=g,
             drop_last=False,
         )
+        train_labels_dl = DataLoader(
+            train_labels_ds,
+            batch_size=bs,
+            shuffle=False,
+            worker_init_fn=seed_worker,
+            generator=g,
+            drop_last=False,
+        )
+        valid_labels_dl = DataLoader(
+            valid_labels_ds,
+            batch_size=bs,
+            shuffle=False,
+            worker_init_fn=seed_worker,
+            generator=g,
+            drop_last=False,
+        )
     else:
         train_dl = DataLoader(
             train_ds,
@@ -374,7 +407,19 @@ def train(model, variables, train_data, test_data, config):
             batch_size=bs,
             drop_last=False,
         )
-
+        train_labels_dl = DataLoader(
+            train_labels_ds,
+            batch_size=bs,
+            shuffle=False,
+            drop_last=False,
+        )        
+        valid_labels_dl = DataLoader(
+            valid_labels_ds,
+            batch_size=bs,
+            shuffle=False,
+            drop_last=False,
+        ) 
+         
     # Select Optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -411,6 +456,7 @@ def train(model, variables, train_data, test_data, config):
             config=config,
             model=model,
             train_dl=train_dl,
+            train_labels_dl=train_labels_dl,
             model_children=model_children,
             regular_param=reg_param,
             optimizer=optimizer,
@@ -425,6 +471,7 @@ def train(model, variables, train_data, test_data, config):
             val_epoch_loss = validate(
                 model=trained_model,
                 test_dl=valid_dl,
+                test_labels_dl=valid_labels_dl,
                 model_children=model_children,
                 reg_param=reg_param,
             )

@@ -131,7 +131,7 @@ def normalize(data, custom_norm: bool):
 
 
 @jit(cache=True, parallel=True, nopython=True)
-def split(data, test_size: float, random_state: int) -> Tuple[ndarray, ndarray]:
+def split(data, labels, test_size: float, random_state: int) -> Tuple[ndarray, ndarray]:
     """Splits the given data according to a test size into two sets, train and test. This is a sklearn function,
     opted from: https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
 
@@ -143,7 +143,7 @@ def split(data, test_size: float, random_state: int) -> Tuple[ndarray, ndarray]:
     Returns:
         ndarray, ndarray: Two datasets split in size according to the `test_size` value.
     """
-    return train_test_split(data, test_size=test_size, random_state=random_state)
+    return train_test_split(data, labels, test_size=test_size, random_state=random_state)
 
 
 @jit(cache=True, parallel=True, forceobj=True)

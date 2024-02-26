@@ -173,7 +173,7 @@ def mse_loss_l1(model_children, true_data, reconstructed_data, reg_param, valida
         return mse_loss, 0, 0
 
 
-def mse_sum_loss_l1(model_children, true_data, reconstructed_data, reg_param, validate):
+def mse_sum_loss_l1(model_children, true_data, true_labels, reconstructed_data, reg_param, validate):
     """
     Computes the sum of mean squared error (MSE) loss and L1 regularization loss.
     Args:
@@ -206,9 +206,9 @@ def mse_sum_loss_l1(model_children, true_data, reconstructed_data, reg_param, va
             l1_loss += torch.mean(torch.abs(values))
 
         loss = mse_sum_loss + reg_param * l1_loss
-        return loss, mse_sum_loss, l1_loss
+        return loss, mse_sum_loss, l1_loss, 0
     else:
-        return mse_sum_loss, 0, 0
+        return mse_sum_loss, 0, 0, 0
 
 
 # Accuracy function still WIP. Not working properly.

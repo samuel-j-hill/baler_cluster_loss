@@ -304,6 +304,7 @@ def process(
     """
     loaded = np.load(input_path)
     data = loaded["data"]
+    labels = loaded["names"]    # added labels
 
     if verbose:
         print("Original Dataset Shape - ", data.shape)
@@ -321,11 +322,11 @@ def process(
         train_set = data
         test_set = train_set
     else:
-        train_set, test_set = train_test_split(
-            data, test_size=test_size, random_state=1
+        train_set, test_set, train_labels, test_labels = train_test_split(      # defined training labels and test labels
+            data, labels, test_size=test_size, random_state=1
         )
 
-    return (train_set, test_set, normalization_features, original_shape)
+    return (train_set, test_set, train_labels, test_labels, normalization_features, original_shape)     # added train_labels and test_labels to return statement
 
 
 def renormalize(data, true_min_list, feature_range_list):

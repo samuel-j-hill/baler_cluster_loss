@@ -6,12 +6,14 @@ import sys
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from torch.utils.data import TensorDataset
 from tqdm.autonotebook import tqdm
 import math
-
-import baler_compressor.helper as helper
-import baler_compressor.utils as utils
-import baler_compressor.data_processing as data_processing
+ 
+sys.path.append("./src/baler_compressor/")
+import helper
+import utils
+import data_processing
 
 
 def run(data_path, config):
@@ -28,6 +30,8 @@ def run(data_path, config):
     Raises:
         NameError: Baler currently only supports 1D (e.g. HEP) or 2D (e.g. CFD) data as inputs.
     """
+
+    print("Running Sam's version of trainer.run")
 
     config.input_path = data_path
     verbose = config.verbose
@@ -149,7 +153,6 @@ def fit(
     config,
     model,
     train_dl,
-    train_labels_dl,
     model_children,
     regular_param,
     optimizer,
@@ -179,9 +182,8 @@ def fit(
     running_loss = 0.0
     device = helper.get_device()
 
-    for idx, inputs in enumerate(tqdm(train_dl)):
+    for idx, (inputs, labels) in enumerate(tqdm(train_dl)):
         inputs = inputs.to(device)
-        labels = train_labels_dl[idx]
         labels = labels.to(device)
 
         # Set the gradients to zero
@@ -222,7 +224,7 @@ def fit(
     return epoch_loss, mse_loss, l1_loss, model
 
 
-def validate(model, test_dl, test_labels_dl, model_children, reg_param):
+def validate(model, test_dl, model_children, reg_param):
     """Function used to validate the training. Not necessary for doing compression, but gives a good indication of wether the model selected is a good fit or not.
     Args:
         model (modelObject): Defines the model one wants to validate. The model used here is passed directly from `fit()`.
@@ -240,13 +242,12 @@ def validate(model, test_dl, test_labels_dl, model_children, reg_param):
     device = helper.get_device()
 
     with torch.no_grad():
-        for idx, inputs in enumerate(tqdm(test_dl)):
+        for idx, (inputs, labels) in enumerate(tqdm(test_dl)):
             inputs = inputs.to(device)
-            labels = test_labels_dl[idx]
             labels = labels.to(device)
             reconstructions = model(inputs)
 
-            loss, _, _ = utils.mse_sum_loss_l1(
+            loss, _, _, _ = utils.mse_sum_loss_l1(
                 model_children=model_children,
                 true_data=inputs,
                 true_labels=labels,
@@ -326,12 +327,12 @@ def train(model, variables, train_data, test_data, train_labels, test_labels, co
             valid_ds = torch.tensor(test_data, dtype=torch.float32, device=device).view(
                 test_data.shape[0], test_data.shape[1] * test_data.shape[2]
             )
-            train_labels_ds = torch.tensor(
-                train_labels, dtype=torch.uint8, device=device
-            ).view(train_data.shape[0])
-            valid_labels_ds = torch.tensor(
-                test_labels, dtype=torch.uint8, device=device
-            ).view(test_data.shape[0])
+            train_labels_ds = torch.tensor(                     
+                train_labels, dtype=torch.uint8, device=device  
+            ).view(train_data.shape[0])                         
+            valid_labels_ds = torch.tensor(                     
+                test_labels, dtype=torch.uint8, device=device   
+            ).view(test_data.shape[0])                          
         elif config.model_type == "convolutional" and config.model_name == "Conv_AE_3D":
             train_ds = torch.tensor(
                 train_data, dtype=torch.float32, device=device
@@ -359,13 +360,18 @@ def train(model, variables, train_data, test_data, train_labels, test_labels, co
     elif config.data_dimension == 1:
         train_ds = torch.tensor(train_data, dtype=torch.float64, device=device)
         valid_ds = torch.tensor(test_data, dtype=torch.float64, device=device)
+        
+    # Creating TensorDataset to combine data and labels
+    
+    train_dataset = TensorDataset(train_ds, train_labels_ds)
+    valid_dataset = TensorDataset(valid_ds, valid_labels_ds)
 
     # Pushing input data into the torch-DataLoader object and combines into one DataLoader object (a basic wrapper
     # around several DataLoader objects).
 
     if config.deterministic_algorithm:
         train_dl = DataLoader(
-            train_ds,
+            train_dataset,
             batch_size=bs,
             shuffle=False,
             worker_init_fn=seed_worker,
@@ -373,50 +379,22 @@ def train(model, variables, train_data, test_data, train_labels, test_labels, co
             drop_last=False,
         )
         valid_dl = DataLoader(
-            valid_ds,
+            valid_dataset,
             batch_size=bs,
-            worker_init_fn=seed_worker,
-            generator=g,
-            drop_last=False,
-        )
-        train_labels_dl = DataLoader(
-            train_labels_ds,
-            batch_size=bs,
-            shuffle=False,
-            worker_init_fn=seed_worker,
-            generator=g,
-            drop_last=False,
-        )
-        valid_labels_dl = DataLoader(
-            valid_labels_ds,
-            batch_size=bs,
-            shuffle=False,
             worker_init_fn=seed_worker,
             generator=g,
             drop_last=False,
         )
     else:
         train_dl = DataLoader(
-            train_ds,
+            train_dataset,
             batch_size=bs,
             shuffle=False,
             drop_last=False,
         )
         valid_dl = DataLoader(
-            valid_ds,
+            valid_dataset,
             batch_size=bs,
-            drop_last=False,
-        )
-        train_labels_dl = DataLoader(
-            train_labels_ds,
-            batch_size=bs,
-            shuffle=False,
-            drop_last=False,
-        )        
-        valid_labels_dl = DataLoader(
-            valid_labels_ds,
-            batch_size=bs,
-            shuffle=False,
             drop_last=False,
         ) 
          
@@ -456,7 +434,6 @@ def train(model, variables, train_data, test_data, train_labels, test_labels, co
             config=config,
             model=model,
             train_dl=train_dl,
-            train_labels_dl=train_labels_dl,
             model_children=model_children,
             regular_param=reg_param,
             optimizer=optimizer,
@@ -471,7 +448,6 @@ def train(model, variables, train_data, test_data, train_labels, test_labels, co
             val_epoch_loss = validate(
                 model=trained_model,
                 test_dl=valid_dl,
-                test_labels_dl=valid_labels_dl,
                 model_children=model_children,
                 reg_param=reg_param,
             )

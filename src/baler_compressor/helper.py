@@ -185,7 +185,8 @@ class Config:
     emd: bool
     l1: bool
     deterministic_algorithm: bool
-
+    use_labels: bool
+    
 
 def create_default_config(workspace_name: str, project_name: str) -> str:
     """Creates a default config file for a project.
@@ -302,6 +303,8 @@ def process(
     Returns: ndarray, ndarray, ndarray: Array with the train set, array with the test set and array with the
     normalization features.
     """
+    print("Running Sam's version of process")
+    
     loaded = np.load(input_path)
     data = loaded["data"]
     labels = loaded["names"]    # added labels
@@ -321,12 +324,14 @@ def process(
     if not test_size:
         train_set = data
         test_set = train_set
+        
+        return (train_set, test_set, labels, normalization_features, original_shape)
     else:
         train_set, test_set, train_labels, test_labels = train_test_split(      # defined training labels and test labels
             data, labels, test_size=test_size, random_state=1
         )
 
-    return (train_set, test_set, train_labels, test_labels, normalization_features, original_shape)     # added train_labels and test_labels to return statement
+        return (train_set, test_set, train_labels, test_labels, normalization_features, original_shape)     # added train_labels and test_labels to return statement
 
 
 def renormalize(data, true_min_list, feature_range_list):

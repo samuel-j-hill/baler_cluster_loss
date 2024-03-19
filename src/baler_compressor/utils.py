@@ -192,6 +192,7 @@ def mse_sum_loss_l1(model_children, true_data, true_labels, reconstructed_data, 
             0 (int): Placeholder for MSE loss since it is not calculated during validation.
             0 (int): Placeholder for L1 loss since it is not calculated during validation.
     """
+    
     mse_sum = nn.MSELoss(reduction="sum")
     mse_loss = mse_sum(reconstructed_data, true_data)
     number_of_columns = true_data.shape[1]
